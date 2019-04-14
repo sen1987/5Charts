@@ -1,0 +1,1240 @@
+<!doctype html>  
+<html>
+<head>
+<title>5Charts</title>
+<meta name="viewport" content="user-scalable=no, initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<style>
+  body {
+    padding: 0;
+    margin: 0;
+    overflow-x: hidden;
+    background-color: white;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas {     
+    position: relative;
+    margin: 0;
+    width: 100%;
+    float: left;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  }
+  #loader{
+    display: inline-block;
+    position: fixed;
+    left:50%;
+    top:50%;
+    width: 55px;
+    height: 55px;
+    margin-left: -24px;
+    margin-top: -24px;
+    border: 4px solid #bae2f7;
+    border-top-color: #29b0f5;
+    border-radius: 50%;
+    -webkit-animation: you-spin-me-round .8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+    animation: you-spin-me-round .8s infinite cubic-bezier(0.45, 0.05, 0.55, 0.95);
+    z-index: 10;
+  }
+  @-webkit-keyframes you-spin-me-round{
+    to{
+      -webkit-transform:rotate(360deg);
+      transform:rotate(360deg);
+    }
+  }
+  @keyframes you-spin-me-round{
+    to{
+      -webkit-transform:rotate(360deg);
+      transform:rotate(360deg);
+    }
+  }
+  @media screen and (min-width: 1024px)  {
+    canvas { max-width: 560px; }
+  }
+</style>
+</head>
+<body>
+<div id="loader"></div>
+
+<script type="application/javascript" >
+
+function ChartsView(ctx, chartsData, id, chart_name){
+      const ANG1 = Math.PI*2, ANG2 = Math.PI/180*90, ANG3 = Math.PI/180*-90, ANG4 = Math.PI/180*270;
+      var canva = ctx.canvas, pxR = window.devicePixelRatio, rerend, width_px = 1125, height_px = 1800, cBounds = canva.getBoundingClientRect(), scX=1, scY=1, new_width, width, height;
+      var Theme = {
+        //Colors
+        white: '#fff',
+        bg: ['#ffffff', '#242F3E'],
+        //grid text and lines
+        grid_lines: ['#182D3B20', '#FFFFFF20'],
+        grid_text_xy: ['#8E8E93', '#A3B1C299'],
+        grid_text_x: ['#2525297F', '#A3B1C27F'],
+        grid_text_y: ['#2525297F', '#ECF2F87F'],
+        //view panel
+        scroll_bg: ['#E2EEF999', '#30425999'],
+        scroll_select: ['#C0D1E1', '#56626D'],
+        scroll_tap: ['#e7edf5', '#d2d2d2'],
+        //view stat
+        stat_bg: ['#ffffff', '#1C2533'],
+        stat_blur: '#00000025',
+        //switch butt text
+        txt4: ['#108BE3', '#36A8F1'],
+        //other
+        txt1: ['#43484B', '#E8ECEE'],
+        //Fonts
+        font_h1: 'bold 42px Arial',
+        font_h2: '30px Arial',
+        font_h4: '48px Arial',
+        font_dline: 'bold 32px Arial', 
+        font_grid: '28px Arial',
+        font_btn: 'bold 36px Arial'
+      }, mode = 0;
+
+      function setTheme(m){
+         mode = m;
+         rerend = 1;
+      }
+      function fromatNum(n){
+        if (n > 1000000) return (n / 1000000).toFixed(1) + 'M';
+        if (n > 1000) return (n / 1000).toFixed(1) + 'K';
+        return ~~n;
+      }
+      
+      var Chart = {
+        name:'', xlen: 0, ynum: 0, ysel: [], ymin: 0, ymax: 0, date: [], id:0,
+        bildDate: function(){
+          for(n = 1; n<=this.xlen; n++){
+              var d = new Date(chartsData.columns[0][n]).toUTCString().split(' ');
+              this.date[n] = [d[1]+' '+d[2], d[1]+' '+d[2]+' '+d[3], d[0]+' '+d[2]+' '+d[1]+' '+d[3]];
+          }
+        },
+        setup: function(){
+          this.id = id+1;
+          this.name = chart_name;
+          this.xlen = chartsData.columns[0].length - 1;
+          this.ynum = this.ysel_num = chartsData.columns.length - 1;
+          this.ysel.length = 0;
+          this.bildDate();
+          chartsData[chartsData.types[chartsData.columns[1][0]]] = true;
+          var ym = [];
+          if(chartsData.bar || chartsData.area){
+            chartsData.columns.Yh = [];
+            chartsData.columns.Ysum = [];
+            for(var i = 1, n, sum; i<=this.xlen; i++){
+              for(n = 1, sum = 0; n<=this.ynum; n++){
+                this.ysel[n] = 1;
+                sum += chartsData.columns[n][i];
+              }  
+              ym.push(sum);
+              chartsData.columns.Yh[i] = 0;
+              chartsData.columns.Ysum[i] = sum;
+            }
+          }else{
+            for(var n = 1, m; n<=this.ynum; n++){
+              this.ysel[n] = 1;
+              m = chartsData.columns[n].slice(1);
+              chartsData.columns[n]['max'] = Math.max(...m);
+              chartsData.columns[n]['min'] = Math.min(...m);
+              ym = ym.concat(m);
+            }
+          }
+          if(ym.length>0) {
+            this.ymin = Math.min(...ym); this.ymax = Math.max(...ym);
+          }
+        },
+        selY: function(s, v){
+          if(this.ynum > 0 && s > 0 && s <= this.ynum){
+            this.ysel[s] = v;
+            this.ysel_num = 0;
+            for(var i=1; i<=this.ynum; i++) 
+              if(this.ysel[i]) 
+                this.ysel_num++;
+            if(!chartsData.y_scaled){
+              this.ymin = this.getYi(1).min;
+              this.ymax = this.getYi(1).max;
+            }
+            if(chartsData.area)
+              for(var i = 1, n, sum; i<=this.xlen; i++){
+                  for(n = 1, sum = 0; n<=this.ynum; n++)
+                     if(this.ysel[n]) sum += chartsData.columns[n][i]; 
+                  chartsData.columns.Ysum[i] = sum;
+                }
+          }
+        },
+        getYi: function(s, e, o){
+          if(chartsData.bar){
+            var yi = {min: 0, max: 0}, i, n, ym = [], sum;
+            for(i = 1; i<=this.xlen; i++){
+              for(n = 1, sum = 0; n<=this.ynum; n++)
+                if(this.ysel[n]) sum += chartsData.columns[n][i];
+              ym.push(sum);
+            }
+            if(ym.length>0) {yi.min = Math.min(...ym); yi.max = Math.max(...ym);}
+          }else
+          if(chartsData.y_scaled){
+            var yi = [], n, ym;
+            yi.vstart = []; yi.vend = []; 
+            for(n=1; n<=this.ynum; n++){
+              ym = chartsData.columns[n].slice(s, e);
+              yi[n] = {min: Math.min(...ym), max: Math.max(...ym)}
+              if(o){
+                if(yi[n].min !== o.ymin[n] || yi[n].max !== o.ymax[n]) yi.change = 1;
+                yi.vstart.push(o.ymin[n]);
+                yi.vstart.push(o.ymax[n]);
+                yi.vend.push(yi[n].min);
+                yi.vend.push(yi[n].max);
+              }
+            }
+          }else{
+            var yi = {min: 0, max: 0}, n, ym = [], smax = 0;
+            for(n=1; n<=this.ynum; n++)
+              if(this.ysel[n]){
+                ym = ym.concat(chartsData.columns[n].slice(s, e));
+              } 
+            if(ym.length>0) {yi.min = Math.min(...ym); yi.max = Math.max(...ym);}
+          }
+          return yi;
+        },
+        getName: function(v){
+          return chartsData.names[chartsData.columns[v][0]];
+        },
+        getColor: function(v){
+          return chartsData.colors[chartsData.columns[v][0]];
+        },
+        getDate: function(i, f){
+          return this.date[i][f];
+        },
+        getMaxYp: function(curr = this.ymax, max = this.ymax, min = this.ymin, h, p = 10){
+          return  ((curr - min) * (h - p)) / (max - min);
+        },
+        getYp: function(n, i, y, h, ymax = this.ymax, ymin = this.ymin){
+          return y - ((chartsData.columns[n][i] - ymin) * h) / (ymax - ymin);
+        },
+        getYh: function(n, i, h, ymax = this.ymax){
+          return (chartsData.columns[n][i] * h) / ymax;
+        }
+      }
+
+      var Animate = {
+          time:1, tf:0, i:0,
+          easing: {
+            linear: function (t) { return t },
+            easeInQuad: function (t) { return t*t },
+            easeOutQuad: function (t) { return t*(2-t) },
+            easeInOutQuad: function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t }
+          },
+          New: function (o, fraction, duration, vstart, vend, progress, end=function(){}){
+            o.start = this.time;
+            o.fraction = Animate.easing[fraction];
+            o.duration = duration;
+            o.vstart = vstart;
+            o.vcurr = [];
+            o.vend = vend;
+            o.progress = progress;
+            o.end = end;
+          },
+          begin: function(p, o){
+            tf = (this.time - o.start) / o.duration;
+            if(tf > 1) tf = 1;
+            for(i = 0; i<o.vstart.length; i++)
+               o.vcurr[i] = o.vstart[i] + (o.vend[i] - o.vstart[i]) * o.fraction(tf);
+            o.progress();
+            if(tf === 1) {o.start = 0; o.end(); }
+            p.redraw = 1;
+          }
+      }
+
+      Chart.setup();
+
+
+      function Viewer(top = 140, width = width_px, height = 925){
+        function roundRect(x, y, width, height, radius){
+          ctx.moveTo(x, y + radius);
+          ctx.lineTo(x, y + height - radius);
+          ctx.quadraticCurveTo(x, y + height, x + radius, y + height);
+          ctx.lineTo(x + width - radius, y + height);
+          ctx.quadraticCurveTo(x + width, y + height, x + width, y + height - radius);
+          ctx.lineTo(x + width, y + radius);
+          ctx.quadraticCurveTo(x + width, y, x + width - radius,y);
+          ctx.lineTo(x + radius, y);
+          ctx.quadraticCurveTo(x, y, x, y + radius);
+        }
+        function bildDline(i, x){
+          if(drawDline && ((i-1) / dstep)%1 === 0){
+            let o = 1 - ((1 - (dstep / dk2))/0.25);
+            o = ((((i-1) - dstep) / (dstep*2))%1 === 0) ? ((o<0)?0:o) : 1;
+            if(x<gleft+40 || x>gright-40) o=0;
+            dline[dline.length] = [x, o, i];
+          }
+        }
+        var yT = top + 60, yH = 804, yB = yT + yH, gleft = 46, pad = gleft*2, gpad = 10, gyh, gright = width-gleft, gwidth=width-pad, ps, pe, xs, xstep, pv, xv, gd, drawGradient, curr_theme, dstep, dk2, drawDline, ti, line_n = 5.2, sy = yH / line_n, sy_area = yH / 4, ts, i, n, x, xmem, y, x0, y0, yi, ym, dline = [];
+        var charts_effect = {
+            opacity: [], grid: {opacity: [0, 0], ymax: [0, 0]}, ymin:[], ymax:[]
+        }
+        var view_stat = {
+            mw:0, wfilds:0, width:0, height:0, i:0, date:'', names:[], values:[], per:[], len:0, pad: 30, txY: 50,
+            drawfilds: function(x, y, name, value, color){
+                ctx.fillStyle = Theme.txt1[mode];
+                if(this.per.length){
+                  ctx.font = Theme.font_dline;
+                  ctx.textAlign = 'right';
+                  ctx.fillText(this.per[n][0], x + this.pad + this.per.pad, y);
+                }
+                ctx.font = Theme.font_h2;
+                ctx.textAlign = 'left';
+                ctx.fillText(name, (this.per.length) ? (x + this.pad + 15 + this.per.pad) : (x + this.pad), y);
+                ctx.font = Theme.font_dline;
+                ctx.fillStyle = color;
+                ctx.textAlign = 'right';
+                ctx.fillText(value, x + this.width - this.pad, y);
+            },
+            draw: function(x, y){
+                if(!this.wfilds) return;
+                this.allshow = this.all && this.len>1;
+                ctx.font = Theme.font_dline;
+                if(!this.width){
+                  this.date = Chart.getDate(this.i, 2);
+                  this.mw = ctx.measureText(this.date).width;
+                  if(this.mw > this.wfilds) this.wfilds = this.mw;
+                  this.width = this.wfilds + this.pad*2;
+                  this.height += this.txY + this.pad;
+                  if(this.allshow) this.height += this.txY;
+                  this.center = this.width/2;
+                }
+                if(chartsData.bar || chartsData.area){
+                    x = (x-gleft > this.width + this.pad) ? x - this.width - this.pad : x + this.pad;
+                }else
+                    x = (x-gleft < this.center) ? gleft : (width-x-gleft < this.center) ? width-this.width-gleft : (x-this.center);
+                ctx.save();
+                ctx.fillStyle = Theme.stat_bg[mode]
+                ctx.beginPath();
+                roundRect(x, y, this.width, this.height, 20);
+                if(!mode){
+                  ctx.shadowColor = Theme.stat_blur;
+                  ctx.shadowBlur = 4;
+                  ctx.shadowOffsetX = 0;
+                  ctx.shadowOffsetY = 1;
+                }
+                ctx.fill();
+                ctx.restore();
+                ctx.fillStyle = Theme.txt1[mode];
+                ctx.textBaseline = 'bottom';
+                ctx.textAlign = 'left';
+                ctx.fillText(this.date, x + this.pad, y += this.txY + 5);
+                for(n=1; n<=Chart.ynum; n++)
+                  if(Chart.ysel[n])
+                    this.drawfilds(x, y += this.txY, this.names[n], this.values[n], Chart.getColor(n));
+                if(this.allshow) this.drawfilds(x, y += this.txY, 'All', this.values.all, Theme.txt1[mode]);
+            },
+            measure: function(i, n){
+                if(i!==this.i){
+                  this.i = i;
+                  this.height = this.width = this.wfilds = this.all = this.len = 0;
+                }
+                if(this.width) return;
+                this.len++;
+                this.names[n] = chartsData.names[chartsData.columns[n][0]];
+                this.values[n] = chartsData.columns[n][i].toLocaleString();
+                ctx.font = Theme.font_h2;
+                this.mw = ctx.measureText(this.names[n]).width + 100 + ctx.measureText(this.values[n]).width;
+                if(chartsData.area){
+                   this.per[n] = [~~(chartsData.columns[n][i] * 100 / chartsData.columns.Ysum[i]) + '%', 0];
+                   this.per[n][1] = ctx.measureText(this.per[n][0]).width;
+                   this.mw += this.per[n][1] + 0;
+                }
+                if(this.mw > this.wfilds){ this.wfilds = this.mw; if(this.per.length){ this.per.pad = this.per[n][1] }}
+                this.height += this.txY;
+                if(chartsData.bar && chartsData.stacked && !chartsData.area) {
+                  this.all += chartsData.columns[n][i];
+                  this.values.all = this.all.toLocaleString();
+                }
+            }
+        }
+        var panel_top = yB + 106, panel_width = gwidth, panel_height = 120, panel_bottom = panel_top + panel_height;
+        var slide = {
+            left:0,right:0,tpad:40, xstep: panel_width / (Chart.xlen - ((chartsData.bar) ? 0 : 1))
+        }
+        var tap_effect = {
+            x: 0, y: 0, radius: 0, opacity: 0,
+            draw: function(){
+              ctx.globalCompositeOperation = 'multiply';
+              ctx.globalAlpha = this.opacity;
+              ctx.fillStyle = Theme.scroll_tap[mode];
+              ctx.beginPath();
+              ctx.arc(this.x, this.y, this.radius, 0, ANG1, true);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+              ctx.globalCompositeOperation = 'source-over';
+            },
+            setXY: function(x, y){ this.x = x; this.y = y; }
+        }
+        var panel_charts_effect = {
+            opacity: [], ymax:[], ymin:[]
+        }
+        for(i=0; i<=Chart.ynum; i++){
+            charts_effect.opacity[i] = 1;
+            charts_effect.ymin[i] = 0;
+            charts_effect.ymax[i] = 0;
+            panel_charts_effect.opacity[i] = 1;
+            panel_charts_effect.ymin[i] = Chart.ymin;
+            panel_charts_effect.ymax[i] = Chart.ymax;
+        }
+        
+
+        this.draw = function(){
+
+        if(!xv || rerend){
+            ctx.fillStyle = Theme.bg[mode];
+            ctx.save();
+            ctx.fillRect(0, panel_top - 30, width, panel_height + 60);
+            ctx.beginPath();
+            roundRect(gleft, panel_top, panel_width, panel_height, 20);
+            ctx.clip();
+
+            if(chartsData.area){
+              ym=1;
+              for(n=1; n<=Chart.ynum; n++)
+                if(Chart.ysel[n]){
+                  ctx.globalAlpha = 1;
+                  ctx.fillStyle = Chart.getColor(n);
+                  x = gleft;
+                  if(ym){
+                    ctx.beginPath();
+                    ctx.fillRect(x, panel_top, panel_width, panel_height);
+                  }
+                  else {
+                    ctx.fill();
+                    ctx.beginPath();
+                  }
+                  if(Chart.ysel_num>1){
+                    for(i=1; i<=Chart.xlen; i++, x += slide.xstep){
+                      if(ym) chartsData.columns.Yh[i] = panel_bottom;
+                      if(i===1) ctx.moveTo(x, chartsData.columns.Yh[i]);
+                      chartsData.columns.Yh[i] -= Chart.getYh(n, i, panel_height, chartsData.columns.Ysum[i]);
+                      ctx.lineTo(x, chartsData.columns.Yh[i]);
+                    }
+                    ctx.lineTo(x, panel_top);
+                    ctx.lineTo(gleft, panel_top);
+                  }
+                  ym=0;
+                }
+            }
+            else
+            if(chartsData.bar){
+              ctx.lineWidth = slide.xstep+1;
+              ym=1;
+              for(n=1; n<=Chart.ynum; n++)
+                if(Chart.ysel[n]){
+                  ctx.globalAlpha = 1;
+                  ctx.strokeStyle = Chart.getColor(n);
+                  ctx.beginPath();
+                  x = gleft;
+                  for(i=1; i<=Chart.xlen; i++){
+                    if(ym) chartsData.columns.Yh[i] = panel_bottom;
+                    ctx.moveTo(x, chartsData.columns.Yh[i]);
+                    chartsData.columns.Yh[i] -= Chart.getYh(n, i, panel_height);
+                    ctx.lineTo(x, chartsData.columns.Yh[i]);
+                    x += slide.xstep;
+                  }
+                  ym=0;
+                  ctx.stroke();
+                } 
+            }else
+            if(chartsData.line){
+              ctx.lineWidth = 3;
+              gyh = panel_height - gpad*2;
+              y0 = panel_bottom - gpad;
+              for(n=1; n<=Chart.ynum; n++)
+                if(panel_charts_effect.opacity[n]>0){
+                  if(chartsData.y_scaled){
+                    panel_charts_effect.ymax[n] = chartsData.columns[n].max;
+                    panel_charts_effect.ymin[n] = chartsData.columns[n].min;
+                  }
+                  ctx.globalAlpha = panel_charts_effect.opacity[n];
+                  ctx.strokeStyle = Chart.getColor(n);
+                  ctx.beginPath();
+                  ctx.moveTo(gleft, Chart.getYp(n, 1, y0, gyh, panel_charts_effect.ymax[n], panel_charts_effect.ymin[n]));
+                  for(i=2; i<=Chart.xlen; i++)
+                    ctx.lineTo(gleft + slide.xstep*i, Chart.getYp(n, i, y0, gyh, panel_charts_effect.ymax[n], panel_charts_effect.ymin[n]));
+                  ctx.stroke();
+                }
+            }
+            
+            ctx.globalAlpha = 1;     
+            ctx.fillStyle = Theme.scroll_bg[mode];
+            ctx.beginPath();
+            ctx.rect(gleft, panel_top, slide.left + 14, panel_height);
+            ctx.rect(gleft + panel_width - slide.right - 14, panel_top, slide.right + 14, panel_height);
+            ctx.fill();
+            ctx.restore(); 
+            if(tap_effect.opacity>0) tap_effect.draw();
+
+            ctx.save(); 
+            ctx.beginPath();
+            roundRect(gleft + slide.left, panel_top - 3, slide.width, panel_height + 6, 20);
+            ctx.clip();
+            ctx.closePath();
+            ctx.lineWidth = 28;
+            ctx.strokeStyle = Theme.scroll_select[mode];
+            ctx.beginPath();
+            ctx.rect(gleft + slide.left + 14, panel_top - 14, slide.width - ctx.lineWidth, panel_height + ctx.lineWidth);
+            ctx.stroke();
+
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = Theme.white;
+            ctx.beginPath();
+            ctx.moveTo(gleft + slide.left + 14, panel_top + 49);
+            ctx.lineTo(gleft + slide.left + 14, panel_top + 74);
+            ctx.moveTo(gleft + panel_width - slide.right - 14, panel_top + 49);
+            ctx.lineTo(gleft + panel_width - slide.right - 14, panel_top + 74);
+            ctx.stroke();
+            ctx.restore(); 
+          }
+
+
+          if(curr_theme!==mode){
+            gd = ctx.createLinearGradient(width, top, width, top + 30);
+            gd.addColorStop(0, Theme.bg[mode]);
+            gd.addColorStop(1, Theme.bg[mode]+'00');
+            curr_theme = mode;
+            drawDline = 1;
+          }
+
+          ctx.fillStyle = Theme.bg[mode];
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(gleft, top, gwidth, yB - top + 2);
+          ctx.fill();
+          ctx.clip();
+          
+
+          if(chartsData.area){
+            ym=1;
+            for(n=1; n<=Chart.ynum; n++)
+              if(Chart.ysel[n]){
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = Chart.getColor(n);
+                x = xs;
+                if(ym){
+                  ctx.beginPath();
+                  ctx.fillRect(x, yT, (pe-ps)*xstep, yH);
+                }else{
+                  ctx.fill();
+                  ctx.beginPath();
+                }
+                if(Chart.ysel_num>1){
+                  for(i=ps; i <= pe; i++){
+                    if(ym) chartsData.columns.Yh[i] = yB;
+                    if(i===ps) ctx.moveTo(x, chartsData.columns.Yh[i]);
+                    chartsData.columns.Yh[i] -= Chart.getYh(n, i, yH, chartsData.columns.Ysum[i]);
+                    ctx.lineTo(x, chartsData.columns.Yh[i]);
+                    bildDline(i, x);
+                    if(i===pe) break;
+                    x += xstep;
+                  }
+                  ctx.lineTo(x, yT);
+                  ctx.lineTo(xs, yT);
+                }
+                ym = drawDline = 0;
+              } 
+              ctx.lineWidth = 2;
+              ctx.globalAlpha = 1;
+              ctx.font = Theme.font_grid;
+              ctx.textBaseline = 'bottom';
+              ctx.textAlign = 'left';
+              ctx.strokeStyle = Theme.grid_lines[mode];
+              ctx.fillStyle = Theme.grid_text_y[mode];
+              x = gleft; 
+              y = yB;
+              ti = 0;
+              ctx.beginPath();
+              for(i=0, ts = 25; i <= 4; i++){
+                ctx.moveTo(gleft, y);
+                ctx.lineTo(gright, y);
+                ctx.fillText(fromatNum(ti), x, y-8);
+                ti += ts;
+                y -= sy_area;
+              }
+              ctx.stroke();
+              if(xv){
+                ctx.globalAlpha = 1;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(xv, yT);
+                ctx.lineTo(xv, yB);
+                ctx.stroke();
+                for(n=1; n<=Chart.ynum; n++)
+                  if(Chart.ysel[n]) 
+                    view_stat.measure(pv, n);
+                view_stat.draw(xv, top+80);
+              }
+
+          }else
+          if(chartsData.bar){
+            ctx.lineWidth = xstep+2;
+            x0 = xs + (xstep / 2);
+            ym=1;
+            for(n=1; n<=Chart.ynum; n++)
+              if(Chart.ysel[n]){
+                ctx.globalAlpha = (xv) ? 0.6 : 1;
+                ctx.strokeStyle = Chart.getColor(n);
+                ctx.beginPath();
+                x = x0;
+                for(i=ps; i <= pe; i++){
+                  if(ym) chartsData.columns.Yh[i] = yB;
+                  if(pv!==i || !xv){
+                    ctx.moveTo(x, chartsData.columns.Yh[i]);
+                    chartsData.columns.Yh[i] -= Chart.getYh(n, i, yH);
+                    ctx.lineTo(x, chartsData.columns.Yh[i]);
+                  }
+                  if(pv===i && xv) xv = x;
+                  bildDline(i, x);
+                  x += xstep;
+                }
+                ctx.stroke();
+                ym = drawDline = 0;
+              }
+
+              if(xv){
+                ctx.globalAlpha = 1;
+                ctx.lineWidth = xstep;
+                for(n=1; n<=Chart.ynum; n++)
+                  if(Chart.ysel[n]){
+                    ctx.strokeStyle = Chart.getColor(n);
+                    ctx.beginPath();
+                    ctx.moveTo(xv, chartsData.columns.Yh[pv]);
+                    chartsData.columns.Yh[pv] -= Chart.getYh(n, pv, yH);
+                    ctx.lineTo(xv, chartsData.columns.Yh[pv]);
+                    view_stat.measure(pv, n);
+                    ctx.stroke();
+                  } 
+              }
+
+              ctx.lineWidth = 2;
+              ctx.globalAlpha = 1;
+              ctx.font = Theme.font_grid;
+              ctx.textBaseline = 'bottom';
+              ctx.textAlign = 'left';
+              ctx.strokeStyle = Theme.grid_lines[mode];
+              ctx.fillStyle = Theme.grid_text_y[mode];
+              x = gleft; 
+              y = yB;
+              ti = 0;
+              ctx.beginPath();
+              for(i=0, ts = Chart.ymax / line_n; i < line_n; i++){
+                ctx.moveTo(gleft, y);
+                ctx.lineTo(gright, y);
+                ctx.fillText(fromatNum(ti), x, y-8);
+                ti += ts;
+                y -= sy;
+              }
+              ctx.stroke();
+              if(xv) view_stat.draw(xv, top+50);
+
+          }else
+          if(chartsData.line)
+          if(chartsData.y_scaled){
+
+              ctx.lineWidth = 2;
+              ctx.globalAlpha = 1;
+              ctx.font = Theme.font_grid;
+              ctx.textBaseline = 'bottom';
+              ctx.strokeStyle = Theme.grid_lines[mode];
+              ctx.fillStyle = Theme.grid_text_xy[mode];
+              ctx.beginPath();
+              y = yB;
+              for(i=0; i < line_n; i++){
+                ctx.moveTo(gleft, y);
+                ctx.lineTo(gright, y);
+                y -= sy;
+              }
+              ctx.stroke();
+
+              ctx.lineWidth = 5;
+              ctx.lineJoin = 'bevel';
+              gyh = yH - gpad*2;
+              y0 = yB - gpad;
+              for(n=1; n<=Chart.ynum; n++)
+                if(charts_effect.opacity[n]>0){
+                  ctx.globalAlpha = charts_effect.opacity[n];
+                  ctx.strokeStyle = ctx.fillStyle = Chart.getColor(n);
+                  x = xs;
+                  y = Chart.getYp(n, ps, y0, gyh, charts_effect.ymax[n], charts_effect.ymin[n]);
+                  ctx.beginPath();
+                  ctx.moveTo(x, y);
+                  for(i = ps+1; i <= pe; i++){
+                    x += xstep;
+                    y = Chart.getYp(n, i, y0, gyh, charts_effect.ymax[n], charts_effect.ymin[n]);
+                    ctx.lineTo(x, y);
+                    bildDline(i, x);
+                  }
+                  ctx.stroke();
+                  drawDline = 0;
+
+                  if(n===1){
+                    x = gleft; 
+                    ctx.textAlign = 'left';
+                  }else{
+                    x = gright; 
+                    ctx.textAlign = 'right';
+                  }
+                  y = yB;
+                  ti = charts_effect.ymin[n];
+                  ctx.globalAlpha = charts_effect.opacity[n];
+                  ctx.beginPath();
+                  for(i=0, ts = (charts_effect.ymax[n] - charts_effect.ymin[n]) / line_n; i < line_n; i++){
+                    ctx.fillText(fromatNum(ti), x, y-8);
+                    ti += ts;
+                    y -= sy;
+                  }
+                  ctx.closePath();
+                  drawGradient = (charts_effect.ymax[n] !== charts_effect.yi[n].max);
+                }
+
+                if(xv){
+                    ctx.globalAlpha = 1;
+                    ctx.lineWidth = 3;
+                    ctx.strokeStyle = Theme.grid_lines[mode];
+                    ctx.beginPath();
+                    ctx.moveTo(xv, top);
+                    ctx.lineTo(xv, yB);
+                    ctx.stroke();
+                    ctx.lineWidth = 5;
+                    ctx.fillStyle = Theme.bg[mode];
+                    for(n=1; n<=Chart.ynum; n++)
+                      if(Chart.ysel[n]){
+                        ctx.strokeStyle = Chart.getColor(n);
+                        ctx.beginPath();
+                        ctx.arc(xv, Chart.getYp(n, pv, y0, gyh, charts_effect.ymax[n], charts_effect.ymin[n]), 11, 0, ANG1, true);
+                        ctx.fill();
+                        ctx.stroke();
+                        view_stat.measure(pv, n);
+                      } 
+                    view_stat.draw(xv, top+4);
+                }
+
+          }else{
+
+              ctx.lineWidth = 2;
+              ctx.font = Theme.font_grid;
+              ctx.textBaseline = 'bottom';
+              ctx.textAlign = 'left';
+              ctx.strokeStyle = Theme.grid_lines[mode];
+              ctx.fillStyle = Theme.grid_text_xy[mode];
+              for(n=0; n<2; n++)
+                if(charts_effect.grid.opacity[n]>0 && charts_effect.grid.ymax[n]>0){
+                  y = yB;
+                  ti = charts_effect.ymin[0];
+                  sy = Chart.getMaxYp(charts_effect.grid.ymax[n], charts_effect.ymax[0], charts_effect.ymin[0], yH) / line_n;
+                  ts = (charts_effect.grid.ymax[n] - charts_effect.ymin[0]) / line_n;
+                  ctx.globalAlpha = charts_effect.grid.opacity[n];
+                  ctx.beginPath();
+                  for(i=0; i<line_n; i++){
+                    ctx.moveTo(gleft, y);
+                    ctx.lineTo(gright, y);
+                    ctx.fillText(fromatNum(ti), gleft, y-8);
+                    ti += ts;
+                    y -= sy;
+                  }
+                  ctx.stroke();
+                } 
+
+              ctx.lineWidth = 5;
+              ctx.lineJoin = 'bevel';
+              gyh = yH - gpad*2;
+              y0 = yB - gpad;
+              for(n=1; n<=Chart.ynum; n++)
+                if(charts_effect.opacity[n]>0){
+                  ctx.globalAlpha = charts_effect.opacity[n];
+                  ctx.strokeStyle = Chart.getColor(n);
+                  x = xs;
+                  y = Chart.getYp(n, ps, y0, gyh, charts_effect.ymax[0], charts_effect.ymin[0]);
+                  ctx.beginPath();
+                  ctx.moveTo(x, y);
+                  for(i = ps+1; i <= pe; i++){   
+                    bildDline(i, x);             
+                    x += xstep;
+                    y = Chart.getYp(n, i, y0, gyh, charts_effect.ymax[0], charts_effect.ymin[0]);
+                    ctx.lineTo(x, y);
+                  }
+                  ctx.stroke();
+                  drawDline = 0;
+                }
+
+                if(xv){
+                  ctx.globalAlpha = 1;
+                  ctx.lineWidth = 3;
+                  ctx.strokeStyle = Theme.grid_lines[mode];
+                  ctx.beginPath();
+                  ctx.moveTo(xv, top);
+                  ctx.lineTo(xv, yB);
+                  ctx.stroke();
+                  ctx.lineWidth = 5;
+                  ctx.fillStyle = Theme.bg[mode];
+                  for(n=1; n<=Chart.ynum; n++)
+                    if(Chart.ysel[n]){
+                      ctx.strokeStyle = Chart.getColor(n);
+                      ctx.beginPath();
+                      ctx.arc(xv, Chart.getYp(n, pv, y0, gyh, charts_effect.ymax[0], charts_effect.ymin[0]), 11, 0, ANG1, true);
+                      ctx.fill();
+                      ctx.stroke();
+                      view_stat.measure(pv, n);
+                    } 
+                  view_stat.draw(xv, top+4);
+                }
+                drawGradient = (charts_effect.ymax[0] !== charts_effect.grid.ymax[0]);
+          }
+          
+
+          if(drawGradient){ 
+            ctx.fillStyle = gd;
+            ctx.fillRect(gleft, top-2, gwidth, 30); 
+          }
+
+
+          if(dline.length){
+            ctx.restore();
+            ctx.save();
+            ctx.beginPath();
+            ctx.fillRect(585, 95, 495, 40);
+            ctx.textBaseline = 'bottom';
+            ctx.textAlign = 'right';
+            ctx.font = Theme.font_dline;
+            ctx.fillStyle = Theme.txt1[mode];
+            ctx.fillText(Chart.getDate(dline[0][2], 1) +' - '+Chart.getDate(dline[dline.length-1][2], 1), width_px - gleft, 132);
+            ctx.rect(gleft, yB + 2, gwidth, 50);
+            ctx.clip();
+            ctx.fillStyle = Theme.bg[mode];
+            ctx.fill();
+            ctx.textAlign = 'center';
+            ctx.font = Theme.font_grid;
+            ctx.fillStyle = Theme.grid_text_xy[mode];
+            for(i=0; i<dline.length; i++){
+              ctx.globalAlpha = dline[i][1];
+              ctx.fillText(Chart.getDate(dline[i][2], 0), dline[i][0], yB + 50);
+            }
+            dline.length = 0;
+          }
+          
+          ctx.restore();
+          this.redraw = 0;
+        }
+        this.redraw = 1;
+        this.render = function(){
+            if(charts_effect.start) Animate.begin(this, charts_effect);
+            if(panel_charts_effect.start) Animate.begin(this, panel_charts_effect);
+            if(tap_effect.start) Animate.begin(this, tap_effect);
+            if(rerend) this.redraw = drawDline = 1;
+            if(this.redraw) this.draw(); 
+        }
+
+        this.bild = function(){
+          function gk(w){
+            return (w/slide.xstep) / 7;
+          }
+          let z = panel_width / slide.width, dk1;
+          ps = ~~(slide.left / slide.xstep) + 1;
+          pe = Chart.xlen - ~~(slide.right / slide.xstep);
+          xstep = slide.xstep * z;
+          
+          dk1 = ~~gk(slide.wmin), ss = dk1*2;
+          dk2 = gk(slide.width);
+          dstep = ss * ~~(~~dk2 / ss);
+          if(!dstep) dstep = dk1;
+          xs = ((slide.xstep * (ps-1) - slide.left) * z) + gleft;
+
+          if(chartsData.bar || chartsData.area){
+
+          }else
+          if(chartsData.line){
+            if(chartsData.y_scaled){
+              charts_effect.yi = Chart.getYi(ps, pe, charts_effect);
+              if(charts_effect.yi.change)
+                Animate.New(charts_effect, 'easeOutQuad', 300, charts_effect.yi.vstart, charts_effect.yi.vend, function(){
+                  for(i=1; i<=Chart.ynum; i++){
+                    this.ymin[i] = this.vcurr[(i-1)*2];
+                    this.ymax[i] = this.vcurr[(i-1)*2+1];
+                  }
+                })
+            }else{
+                yi = Chart.getYi(ps,  pe); 
+                if(yi.max !== charts_effect.grid.ymax[0] || yi.min !== charts_effect.ymin[0]){
+                   charts_effect.grid.ymax[0] = yi.max;
+                    Animate.New(charts_effect, 'easeOutQuad', 300, [0, 1, charts_effect.ymax[0], charts_effect.ymin[0]], [1, 0, yi.max, yi.min], function(){
+                      this.grid.opacity[0] = this.vcurr[0];
+                      this.grid.opacity[1] = this.vcurr[1];
+                      this.ymax[0] = this.vcurr[2];
+                      this.ymin[0] = this.vcurr[3];
+                    }, function(){ this.grid.ymax[1] = yi.max; })
+                }
+            }
+          }
+          this.redraw = drawDline = 1;
+        }
+
+        this.updateChart = function(n){
+          for(i=1; i<=Chart.ynum; i++){
+              if(i!==n) {
+                charts_effect.opacity[i] = Chart.ysel[i];
+                panel_charts_effect.opacity[i] = Chart.ysel[i];
+              }
+              if(i!==n || Chart.ysel[n]) {
+                panel_charts_effect.ymax[i] = Chart.ymax;
+                panel_charts_effect.ymin[i] = Chart.ymin;
+              }
+          }
+
+          if(chartsData.bar || chartsData.area){
+              this.redraw = 1;
+          }else
+          if(chartsData.line){
+            if(chartsData.y_scaled){
+              Animate.New(charts_effect, 'easeOutQuad', 300, [charts_effect.opacity[n]], [Chart.ysel[n]], function(){ this.opacity[n] = this.vcurr[0]; })
+              Animate.New(panel_charts_effect, 'easeOutQuad', 300, [panel_charts_effect.opacity[n]], [Chart.ysel[n]], function(){ this.opacity[n] = this.vcurr[0]; })
+            }else{
+              yi = Chart.getYi(ps,  pe);
+              charts_effect.grid.ymax[0] = yi.max;
+              Animate.New(charts_effect, 'easeOutQuad', 300, [charts_effect.opacity[n], 0, 1, charts_effect.ymax[0], charts_effect.ymin[0]], [Chart.ysel[n], 1, 0, yi.max, yi.min], function(){
+                this.opacity[n] = this.vcurr[0];
+                this.grid.opacity[0] = this.vcurr[1];
+                this.grid.opacity[1] = this.vcurr[2];
+                this.ymax[0] = this.vcurr[3];
+                this.ymin[0] = this.vcurr[4];
+              }, function(){ this.grid.ymax[1] = yi.max; })
+
+              Animate.New(panel_charts_effect, 'easeOutQuad', 300, [panel_charts_effect.opacity[n], panel_charts_effect.ymax[0], panel_charts_effect.ymin[0]], [Chart.ysel[n], Chart.ymax, Chart.ymin], function(){
+                this.opacity[n] = this.vcurr[0];
+                for(i=0; i<=Chart.ynum; i++)
+                  if(i!==n) {
+                    this.ymax[i] = this.vcurr[1];
+                    this.ymin[i] = this.vcurr[2];
+                  }
+              })
+            }
+          }
+          view_stat.i = xv = 0;
+        }
+        this.setSlidePos = function(x, mode){
+          if(mode===2){
+            x = (x < 0) ? 0 : (x > panel_width - slide.width) ? panel_width - slide.width : x;
+            slide.left = x;
+            slide.right = panel_width - slide.width - slide.left;
+          }else
+          if(mode===-1){
+            x = (x < 0) ? 0 : (x > panel_width - slide.right - slide.wmin) ? panel_width - slide.right - slide.wmin : x;
+            slide.width = panel_width - x - slide.right;
+            slide.left = x;
+          }else
+          if(mode===1){
+            var xw = slide.left + slide.wmin;
+            x = (x < xw) ? xw : (x > panel_width) ? panel_width : x;
+            slide.right = panel_width - x;
+            slide.width = x - slide.left;
+          }
+          if(mode!==0){
+            this.redraw = 1;
+            if(xmem !== x){
+              this.bild();
+              xmem = x;
+            }
+          }
+        }
+
+        this.touchmove = function(t){
+          if(touchInRect(t, gleft, yT, gwidth, yH)){
+            xv = t.cX;
+            pv = Math.round(ps + ((xv - xs) / xstep));
+            if(pv>Chart.xlen) pv = Chart.xlen;
+            this.redraw = 1;
+          }else
+          if(xv) { 
+            xv = 0; 
+            this.redraw = 1;
+          }
+          if(t.dX && slide.touchsel){
+            if(!slide.mpos) slide.mpos = slide.left + ((slide.touchsel===1) ? slide.width : 0);
+            if(!tap_effect.mpos) tap_effect.mpos = tap_effect.x;
+            tap_effect.setXY(tap_effect.mpos + t.dX, tap_effect.y);
+            this.setSlidePos(slide.mpos + t.dX, slide.touchsel);
+          }
+        }
+        this.touchstart = function(t){
+          if(touchInRect(t, gleft, panel_top, panel_width, panel_height)){
+            var yc = panel_top + panel_height/2, xl = gleft + slide.left, xr = gleft + slide.left + slide.width;
+            if(t.cX > xl - slide.tpad && t.cX < xl + slide.tpad){
+              slide.touchsel = -1;
+              tap_effect.setXY(xl, yc);
+            }else
+            if(t.cX > xl + slide.width - slide.tpad && t.cX < xr + slide.tpad){
+              slide.touchsel = 1;
+              tap_effect.setXY(xr, yc);
+            }else
+            if(t.cX > xl + slide.tpad && t.cX < xr - slide.tpad){
+              slide.touchsel = 2;
+              tap_effect.setXY(t.cX, yc);
+            }else{
+              slide.touchsel = 0;
+              return;
+            }
+            Animate.New(tap_effect, 'easeOutQuad', 400, [0, 0], [82, 1], function(){
+              this.radius = this.vcurr[0]; this.opacity = this.vcurr[1]; 
+            })
+          }
+        }
+        this.touchend = function(t){
+          if(slide.touchsel){
+            slide.touchsel = slide.mpos = tap_effect.mpos = 0;
+            Animate.New(tap_effect, 'easeOutQuad', 400, [tap_effect.radius, tap_effect.opacity], [0, 0], function(){
+                this.radius = this.vcurr[0]; this.opacity = this.vcurr[1]; 
+            });
+          }
+        }
+        slide.width = slide.wmin = 180;
+        slide.left = panel_width - slide.width - slide.right;
+        slide.right - panel_width - slide.width - slide.left;
+        this.setSlidePos(0);
+      }
+
+
+      function CheckBox(x, y, name, color, id){
+          ctx.font = Theme.font_btn;
+          var height = 104, radius = height / 2, txtleft = 90, text = ctx.measureText(name), xc0 = x + radius, yc0 = y + radius, xc1 = x + txtleft + text.width-15, timer;
+          var check_effect = {
+            fillAlpha: 1, textAlpha: 0, textLeft: 0
+          }
+          
+          this.draw = function(){
+            ctx.save();
+            ctx.fillStyle = Theme.bg[mode];
+            ctx.fillRect(x - 5, y - 5, this.width + 10, height + 10);
+            
+            ctx.globalAlpha = check_effect.fillAlpha;
+            ctx.fillStyle = color;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(xc0, yc0, radius, ANG2, ANG4);
+            ctx.moveTo(xc0, y);
+            ctx.lineTo(xc1, y);
+            ctx.arc(xc1, yc0, radius, ANG3, ANG2);
+            ctx.lineTo(xc0, y + height);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+            ctx.clip();
+
+            ctx.strokeStyle = (this.check) ? Theme.white : Theme.bg[mode];
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'bevel';
+            ctx.beginPath();
+            ctx.moveTo(xc0 - 15, yc0 + 4);
+            ctx.lineTo(xc0 - 6, yc0 + 11);
+            ctx.lineTo(xc0 + 15, yc0 - 12);
+            ctx.stroke();
+
+            ctx.font = Theme.font_btn;
+            ctx.fillStyle = (this.check) ? Theme.white : color;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+            ctx.fillText(name, x + txtleft - check_effect.textLeft, yc0);
+
+            ctx.restore(); 
+            this.redraw = 0;
+          }
+          this.redraw = 1;
+          this.width = radius + txtleft + text.width;
+          this.check = 1;
+          this.id = id;
+          this.render = function(){
+            if(check_effect.start) Animate.begin(this, check_effect);
+            if(rerend) this.redraw = 1; 
+            if(this.redraw) this.draw(); 
+          }
+          this.setCheck = function(c){
+            if(!c && Chart.ysel_num===1) return;
+            if(this.check!==c){
+              if(!c){
+                Animate.New(check_effect, 'easeOutQuad', 200, [1, 0], [0, 25], function(){ this.fillAlpha = this.vcurr[0]; this.textLeft = this.vcurr[1]; });
+              }else{
+                Animate.New(check_effect, 'easeOutQuad', 200, [0, 25], [1, 0], function(){ this.fillAlpha = this.vcurr[0]; this.textLeft = this.vcurr[1]; });
+              }
+              this.check = c;
+              this.oncheck();
+            }  
+          }
+          this.touchstart = function(t){
+            if(touchInRect(t, x, y, this.width, height)) timer = setTimeout(() => {timer=0; this.onuncheck();}, 1000);
+          }
+          this.touchend = function(t){
+            if(touchInRect(t, x, y, this.width, height) && timer) {
+              this.setCheck(this.check^1);
+              if(timer) {clearTimeout(timer);timer=0;}
+            }
+          }
+          this.touchmove = function(t){
+            if(!touchInRect(t, x, y, this.width, height) && timer){
+              if(timer) {clearTimeout(timer);timer=0;} 
+            }
+          }
+          this.oncheck = function(){}
+          this.onuncheck = function(){}
+      }
+
+      function SwitchBox(x, y, width, height = 100){
+        const name = ['Switch to Night Mode', 'Switch to Day Mode'];
+        this.mode = 0;
+        this.redraw = 1;
+        this.draw = function(){
+          ctx.fillStyle = Theme.bg[mode];
+          ctx.fillRect(x, y, width, height);
+          ctx.font = Theme.font_h4;
+          ctx.fillStyle = Theme.txt4[mode];
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
+          ctx.fillText(name[mode], x + width/2, y + 48);
+          this.redraw = 0;
+        }
+        this.render = function(){
+          if(rerend) this.redraw = 1; 
+          if(this.redraw) this.draw(); 
+        }
+        this.touchstart = function(t){
+          if(touchInRect(t, x, y, width, height)){
+             this.mode ^= 1;
+             this.onswitch();
+          }
+        }
+        this.onswitch = function(){}
+      }
+
+
+      var ior, iot, checkBox = [], switchBox, viewer = new Viewer();
+
+      for(var n = 1, left = 46, x = left, y = 1280, o; n<=Chart.ynum; n++){
+        if(n===4){ y += 130; x = left; }
+        o = new CheckBox(x, y, Chart.getName(n), Chart.getColor(n), n);
+        o.oncheck = function(){
+           Chart.selY(this.id, this.check);
+           viewer.updateChart(this.id);
+        }
+        o.onuncheck = function(){
+           checkBox.forEach(o=>{if(o!==this) o.setCheck(0); });
+        }
+        checkBox.push(o); 
+        x += o.width + 10;
+      } 
+      switchBox = new SwitchBox(300, 1650, 500);
+      switchBox.onswitch = function(){
+        setTheme(this.mode);
+      }
+      
+    
+      function render(time){
+        Animate.time = time;
+        cBounds = canva.getBoundingClientRect();
+        new_width = cBounds.width * pxR;
+        if (new_width !== width) {
+          height = cBounds.width * 1.6;
+          canva.style.height = height + 'px';
+          width = new_width;
+          height *= pxR;
+          canva.setAttribute('width', width);
+          canva.setAttribute('height', height);
+          scX = width / width_px;
+          scY = height / height_px;
+          ctx.scale(scX, scY);
+          rerend = 1;
+        }
+        if(rerend){
+          ctx.fillStyle = Theme.bg[mode];
+          ctx.fillRect(0, 0, width_px, height_px);
+          ctx.textBaseline = 'bottom';
+          ctx.textAlign = 'left';
+          ctx.font = Theme.font_h1;
+          ctx.fillStyle = Theme.txt1[mode];
+          ctx.fillText(Chart.name, 46, 132);
+        }
+        viewer.render();
+        for(ior=0; ior<checkBox.length; ior++) checkBox[ior].render();
+        switchBox.render();
+        rerend = 0;
+        requestAnimationFrame(render);
+      }
+      requestAnimationFrame(render);
+
+
+
+      function touchInRect(t, x, y, w, h){
+        return (t.cX > x && t.cX < (x + w) && t.cY > y && t.cY < (y + h));
+      }
+      function getTouchXY(e){
+        var touch;
+        if(e.clientX>=0 && e.clientY>=0){
+          touch = e;
+        }else{
+          if(e.targetTouches && e.targetTouches.length>0){
+            touch = e.touches[0];
+          }else
+          if(e.touches && e.touches.length>0){
+            touch = e.touches[0];
+          }else
+          if(e.changedTouches && e.changedTouches.length>0){
+            touch = e.changedTouches[0];
+          }
+        }
+        touch.cX = (touch.clientX - cBounds.left) * pxR / scX;
+        touch.cY = (touch.clientY - cBounds.top) * pxR / scY;
+        return touch;
+      }
+
+      var is_touch_supported = ('ontouchstart' in window) ? 1 : 0, t, sX, sY, EVENTS = {
+        POINTER_DOWN : is_touch_supported ? 'touchstart' : 'mousedown',
+        POINTER_MOVE : is_touch_supported ? 'touchmove'  : 'mousemove',
+        POINTER_UP   : is_touch_supported ? 'touchend'   : 'mouseup'
+      }
+      window.addEventListener(EVENTS.POINTER_DOWN, function(e){ 
+        t = getTouchXY(e); sX = t.cX; sY = t.cY; 
+        viewer.touchstart(t); 
+        for(iot=0; iot<checkBox.length; iot++) checkBox[iot].touchstart(t);
+        switchBox.touchstart(t); 
+      }, false );
+      window.addEventListener(EVENTS.POINTER_MOVE, function(e){
+        t = getTouchXY(e); 
+        if(t.cX>=0 && t.cY>=0 && t.cX<width_px && t.cY<height_px){
+          if(sX && sY){ t.dX = t.cX - sX; t.dY = t.cY - sY; }
+          viewer.touchmove(t); 
+          for(iot=0; iot<checkBox.length; iot++) checkBox[iot].touchmove(t);
+        }  
+      }, false );
+      window.addEventListener(EVENTS.POINTER_UP, function(e){ 
+        t = getTouchXY(e);
+        viewer.touchend(t); sX = sY = 0; 
+        for(iot=0; iot<checkBox.length; iot++) checkBox[iot].touchend(t);
+      }, false );
+
+  }
+
+
+  for(var i=0, chart_names = ['followers','Interactions','Messages','Views','Apps'], loaded = 0; i<chart_names.length; i++){
+    document.body.appendChild(document.createElement('canvas'));
+    var xhr = new XMLHttpRequest();
+    xhr.i = i;
+    xhr.onreadystatechange = function() {
+        if (this.readyState == 4 && this.status == 200) {
+            new ChartsView((document.getElementsByTagName('canvas')[this.i]).getContext("2d"), JSON.parse(this.responseText), this.i, chart_names[this.i]);   
+            if(++loaded === chart_names.length) document.body.removeChild(document.getElementById('loader'));
+        }
+    }
+    xhr.open('GET', 'contest/'+(i+1)+'/overview.json', true);
+    xhr.send();
+  }
+
+</script>
+</body>
+</html>
