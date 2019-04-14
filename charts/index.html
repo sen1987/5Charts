@@ -1,0 +1,779 @@
+<!doctype html>  
+<html>
+<head>
+<title>Charts</title>
+<meta name="viewport" content="user-scalable=no,initial-scale=1.0,maximum-scale=1.0" />
+<meta name="description" content="" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<style>
+  body {
+    padding: 0;
+    margin: 0;
+  }
+  canvas {     
+    position: fixed;
+    margin: 0;
+    width: 100%;
+  }
+  @media screen and (min-width: 1240px)  {
+    canvas { max-width: 540px; }
+  }
+</style>
+</head>
+<body>
+
+  <canvas width="1080" height="2076"></canvas>
+
+  <script type="text/javascript" src="chartsData.js" ></script>
+  <script type="text/javascript">
+
+    var requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame || window.msRequestAnimationFrame;
+    var cancelAnimationFrame = window.cancelAnimationFrame || window.mozCancelAnimationFrame;
+    var canva = document.getElementsByTagName("canvas")[0], ctx = canva.getContext("2d"), chartsView;
+    
+
+    function ChartsView(chartsData, chart_num){
+      var p = this;
+      p.width = ctx.canvas.width;
+      p.height = ctx.canvas.height;
+
+      var Theme = {
+        mode: 0,
+        bg: ['#ffffff', '#242F3E'],
+        stroke1: ['#DFE6EE', '#40566B'],
+        stroke2: ['#ECF0F3ff', '#313D4D'],
+        stroke3: ['#F2F4F5ff', '#293544'],
+        fill1: ['#E4ECF490', '#1D2835CD'],
+        fill2: ['231,237,245', '210,210,210'],
+        fill3: ['184,209,242', '26,38,53'],
+        fill4: ['243,245,247', '26,38,53'],
+        fill5: ['#D0D0D0', '#1A2030'],
+        txt1: ['#43484B', '#fff'],
+        txt2: ['#96A2AA', '#546778'],
+        txt3: ['#43484B', '#E8ECEE'],
+        txt4: ['#108BE3', '#36A8F1' ],
+        get: function(f){
+          return this[f][this.mode];
+        },
+        setTheme: function(m){
+          this.mode = m;
+        }
+      }
+      
+      var Chart = {
+        sel: 0, xlen: 0, xmin: 0, xmax: 0, ynum: 0, ysel: [], ymax: 0, date: [],
+        setChart: function(i){
+          this.sel = i;
+          this.xlen = chartsData[i].columns[0].length - 1;
+          this.xmin = chartsData[i].columns[0][1];
+          this.xmax = chartsData[i].columns[0][this.xlen - 1];
+          this.ynum = chartsData[i].columns.length - 1;
+          this.ysel.length = 0;
+          for(var n = 1, ym = []; n<=this.ynum; n++){
+            this.ysel[n] = 1;
+            ym = ym.concat(chartsData[i].columns[n].slice(1));
+          }
+          this.ymax = Math.max(...ym);
+          for(n = 1; n<=this.xlen; n++){
+            this.date[n] = new Date(chartsData[this.sel].columns[0][n]).toUTCString().split(' ');
+          }
+        },
+        selY: function(s, v){
+          if(this.ynum > 0 && s > 0 && s <= this.ynum){
+            this.ysel[s] = v;
+            this.ymax = this.getYmax(1);
+          }
+        },
+        getYmax: function(s, e){
+          for(var n = 1, ym = []; n<=this.ynum; n++)
+              if(this.ysel[n]) ym = ym.concat(chartsData[this.sel].columns[n].slice(s, e));
+          return (ym.length>0) ? Math.max(...ym) : 0;
+        },
+        getName: function(v){
+          return chartsData[this.sel].names[chartsData[this.sel].columns[v][0]];
+        },
+        getColor: function(v){
+          return chartsData[this.sel].colors[chartsData[this.sel].columns[v][0]];
+        },
+        getDate: function(i){
+          return this.date[i];
+        },
+        getY: function(v, i){
+          return chartsData[this.sel].columns[v][i];
+        },
+        getMaxYp: function(curr = this.ymax, max = this.ymax, h, p = 10){
+          return  (curr * (h - p)) / max;
+        },
+        getChartYp: function(n, i, y, h, p = 10, ymax = this.ymax){
+          return y + h - ((this.getY(n, i) * (h - p)) / ymax);
+        }
+      }
+
+      var Animate = {
+          easing: {
+            linear: function (t) { return t },
+            easeInQuad: function (t) { return t*t },
+            easeOutQuad: function (t) { return t*(2-t) },
+            easeInOutQuad: function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
+            easeInCubic: function (t) { return t*t*t },
+            easeOutCubic: function (t) { return (--t)*t*t+1 },
+            easeInOutCubic: function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 }
+          },
+          New: function (p, o, stop, duration, vstart, vend, fraction, progress, end=function(){}){
+                var start, tf, e, i, v = [];
+                if(stop && o.aid) {
+                  window.cancelAnimationFrame(o.aid); o.aid = 0;
+                  end(o);
+                }
+                o.aid = requestAnimationFrame(function begin(time) {
+                  if (!start) start = time;
+                  tf = (time - start) / duration;
+                  if (tf > 1) tf = 1;
+                  e = Animate.easing[fraction](tf);
+                  for(i = 0; i<vstart.length; i++)
+                    v[i] = vstart[i] + (vend[i] - vstart[i]) * e;
+                  progress(o, v, e);
+                  if (tf < 1) o.aid = requestAnimationFrame(begin); else end(o);
+                  p.draw();
+                });
+          }
+      }
+      if(!chart_num || chart_num > chartsData.length) chart_num = 1;
+      Chart.setChart(chart_num-1);
+      
+
+
+      function Viewer(top, width, height){
+        const font_h1 = 'bold 34px sans-serif', font_h2 = 'bold 38px sans-serif', font_h3 = '28px Arial';
+        var ycur = 0, ps, pe, xs, xstep, pv, xv, yT = top + 50, yH = 810, yB = yT + yH, gleft = 35, pad = gleft*2, gright = width-gleft, gd, curr_theme, dstep, dk2, xch;
+        var ti, line_n = 5.2, sy, ts, lim;
+        var i, n, x, y, yv, dm;
+        var charts_effect = {
+            opacity: [], grid: {opacity: [0, 0], ymax: [0, 0]}
+        }
+        var view_dat = {
+            date:'', num:[], name:[], color:[], top: top+10, height: 185, radius: 12,
+            setDat: function(y0, date, num, name, color){
+              this.date = date; this.num[y0] = num; this.name[y0] = name; this.color[y0] = color; 
+            }
+        }
+        for(i=0; i<=Chart.ynum; i++)
+            charts_effect.opacity[i] = 1;
+
+
+        this.draw = function(){
+          if(curr_theme!=Theme.mode){
+            gd = ctx.createLinearGradient(width, top, width, top+30);
+            gd.addColorStop(0, Theme.get('bg'));
+            gd.addColorStop(1, Theme.get('bg') + '00');
+            curr_theme = Theme.mode;
+            xch = 1;
+          }
+
+          ctx.save();
+          ctx.fillStyle = Theme.get('bg');
+          ctx.beginPath();
+          ctx.fillRect(gleft, top, width - pad, yB - top);
+          if(xch == 1) ctx.fillRect(gleft, yB, width - pad, 55);
+          ctx.rect(gleft, top, width - pad, height);
+          ctx.clip();
+
+          ctx.lineWidth = 2;
+          ctx.font = '30px Arial';
+          ctx.textBaseline = 'bottom';
+          ctx.strokeStyle = Theme.get('stroke2');
+          ctx.fillStyle = Theme.get('txt2');
+          ctx.beginPath();
+          ctx.moveTo(gleft, yB);
+          ctx.lineTo(gright, yB);
+          ctx.stroke();
+          ctx.fillText(0, gleft, yB-8);
+
+          ctx.strokeStyle = Theme.get('stroke3');
+          ctx.fillStyle = Theme.get('txt2');
+          for(n=0; n < 2; n++){
+            if(charts_effect.grid.opacity[n]>0.1){
+              ctx.globalAlpha = charts_effect.grid.opacity[n];
+              ctx.beginPath();
+              y = yB;
+              ti = 0;
+              for(i=0, sy = Chart.getMaxYp(charts_effect.grid.ymax[n], ycur, yH) / line_n, ts = charts_effect.grid.ymax[n] / line_n, lim = line_n-1; i < lim; i++){
+                ti += ts;
+                y -= sy;
+                ctx.moveTo(gleft, y);
+                ctx.lineTo(gright, y);
+                ctx.fillText(~~ti, gleft, y-8);
+              }
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            }
+          }  
+
+          if(xv){
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = Theme.get('stroke2');
+            ctx.fillStyle = Theme.get('bg');
+            ctx.beginPath();
+            ctx.moveTo(xv, top);
+            ctx.lineTo(xv, yB);
+            ctx.stroke();
+          }
+
+          ctx.lineWidth = 6;
+
+          for(n=1; n<=Chart.ynum; n++){
+            if(charts_effect.opacity[n]>0.1){
+              ctx.globalAlpha = charts_effect.opacity[n];
+              ctx.strokeStyle = Chart.getColor(n);
+              ctx.beginPath();
+              x = xs;
+              yv = y = Chart.getChartYp(n, ps, yT, yH, 10, ycur)
+              ctx.moveTo(x, y);
+
+              for(i = ps+1; i <= pe; i++){
+                x += xstep;
+                y = Chart.getChartYp(n, i, yT, yH, 10, ycur);
+                ctx.lineTo(x, y);
+                if(xv && (i-1)==pv){
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.arc(xv, yv, 12, 0, Math.PI*2, true);
+                  ctx.fill();
+                  ctx.stroke();
+                  ctx.beginPath();
+                  ctx.moveTo(x, y);
+                  dm = Chart.getDate(pv);
+                  view_dat.setDat(n, dm[0]+' '+dm[2]+' '+dm[1], Chart.getY(n, pv), Chart.getName(n), ctx.strokeStyle);
+                } 
+                if(xch == 1){
+                  if((i / dstep) % 1 === 0){
+                    ctx.save();
+                    ctx.globalAlpha = (((i-dstep) / (dstep*2)) % 1 === 0) ? ((dstep / dk2)/0.5 - 1) : 1;
+                    ctx.textBaseline = 'top';
+                    ctx.textAlign = 'center';
+                    ctx.strokeStyle = Theme.get('stroke2');
+                    ctx.fillStyle = Theme.get('txt2');
+                    dm = Chart.getDate(i);
+                    ctx.fillText(dm[2] + ' ' + dm[1], x, yB+22);    
+                    ctx.restore();  
+                  }
+                }
+                yv = y;
+              }
+
+              xch = 0;
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            }
+          }
+          
+          if(ycur !== charts_effect.grid.ymax[0]){
+            ctx.fillStyle = gd;
+            ctx.fillRect(0, top, width, 30); 
+          }
+
+          if(xv){
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = Theme.get('stroke3');
+            ctx.fillStyle = Theme.get('bg');
+            ctx.font = font_h1;
+            var text = ctx.measureText(view_dat.date), wh1 = text.width, wh2=0, wh2pad = 20, wh2w = [], i;
+            ctx.font = font_h2;
+            for(i=0; i<view_dat.name.length; i++)
+              if(Chart.ysel[i]){
+                text = ctx.measureText(view_dat.num[i]);
+                wh2 += (text.width + ((i<view_dat.name.length-1) ? wh2pad : 0));
+                wh2w[i] = text.width;
+              } 
+
+            if(wh2w.length>0){
+              view_dat.txtleft = 25;
+              view_dat.width = ((wh2 > wh1) ? wh2 : wh1) + view_dat.txtleft*2;
+              view_dat.center = view_dat.width/2;
+              x = (xv-gleft < view_dat.center) ? gleft : (width-xv-gleft < view_dat.center) ? width-view_dat.width-gleft : (xv - view_dat.center);
+              y = view_dat.top;
+              ctx.save();
+              ctx.beginPath();
+              ctx.moveTo(x, y+view_dat.radius);
+              ctx.lineTo(x, y+view_dat.height-view_dat.radius);
+              ctx.quadraticCurveTo(x, y+view_dat.height, x+view_dat.radius, y+view_dat.height);
+              ctx.lineTo(x+view_dat.width-view_dat.radius, y+view_dat.height);
+              ctx.quadraticCurveTo(x+view_dat.width, y+view_dat.height, x+view_dat.width, y+view_dat.height-view_dat.radius);
+              ctx.lineTo(x+view_dat.width, y+view_dat.radius);
+              ctx.quadraticCurveTo(x+view_dat.width, y, x+view_dat.width-view_dat.radius,y);
+              ctx.lineTo(x+view_dat.radius, y);
+              ctx.quadraticCurveTo(x, y, x, y+view_dat.radius);
+              ctx.shadowColor =  Theme.get('fill5');
+              ctx.shadowBlur = 8;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 2;
+              ctx.fill();
+              ctx.restore();
+
+              ctx.font = font_h1;
+              ctx.fillStyle = Theme.get('txt3');
+              ctx.textBaseline = 'bottom';
+              view_dat.txtleft += x;
+              ctx.fillText(view_dat.date, view_dat.txtleft, y + 55);
+              for(i=0; i<view_dat.name.length; i++)
+                if(Chart.ysel[i]){
+                  ctx.font = font_h2;
+                  ctx.fillStyle = view_dat.color[i];
+                  ctx.fillText(view_dat.num[i], view_dat.txtleft, y + 127);
+                  ctx.font = font_h3;
+                  ctx.fillText(view_dat.name[i], view_dat.txtleft, y + 165);
+                  view_dat.txtleft += (wh2w[i] + wh2pad);
+                } 
+            }  
+          }
+          
+          ctx.restore(); 
+        }
+        this.bild = function(s){
+          xch = 1;
+          var z = s.wfull / s.width;
+          ps = ~~(s.left / s.xstep) + 1;
+          pe = ps + Math.ceil(s.width / s.xstep) + 1;
+          xstep = s.xstep * z;
+          function gk(w){
+            return (w/s.xstep) / 5;
+          }
+          var dk1 = ~~gk(s.wmin);
+          var ss = dk1*2;
+          dk2 = gk(s.width);
+          dstep = ss * ~~(~~dk2 / ss);
+          if(!dstep) dstep = dk1;
+
+          xs = ((s.xstep * (ps-1) - s.left) * z) + gleft;
+          var ymax = Chart.getYmax(ps,  pe);
+          if(ymax !== charts_effect.grid.ymax[0]){
+              charts_effect.grid.ymax[0]  = ymax;
+              Animate.New(this, charts_effect, 1, 200, [0, 1, ycur], [1, 0, ymax], 'linear', function(o, v){
+                o.grid.opacity[0] = v[0];
+                o.grid.opacity[1] = v[1];
+                ycur = v[2];
+              }, function(o){ 
+                  if(ycur===o.grid.ymax[0]) 
+                    o.grid.ymax[1] = ymax; 
+              })
+          }
+          requestAnimationFrame(this.draw);
+        }
+        this.updateChart = function(n){
+          for(var i=1; i<=Chart.ynum; i++)
+              if(i!=n) charts_effect.opacity[i] = Chart.ysel[i];
+          var ymax = Chart.getYmax(ps,  pe); 
+              charts_effect.grid.ymax[0]  = ymax;
+              Animate.New(this, charts_effect, 1, 200, [charts_effect.opacity[n], 0, 1, ycur], [Chart.ysel[n], 1, 0, ymax], 'linear', function(o, v){
+                o.opacity[n] = v[0];
+                o.grid.opacity[0] = v[1];
+                o.grid.opacity[1] = v[2];
+                ycur = v[3];
+              }, function(o){ 
+                  if(ycur===o.grid.ymax[0]) 
+                    o.grid.ymax[1] = ymax; 
+              })
+        }
+        this.touchmove = function(t){
+          if(touchInRect(t, 0, top, gright - 0, height)){
+             var pn = Math.ceil((t.cX - gleft) / xstep);
+             pv = ps + pn;
+             if(pv>Chart.xlen) pv = Chart.xlen;
+             xv = xs + xstep*pn;
+             requestAnimationFrame(this.draw);
+          }else
+          if(xv) { 
+            xv = 0; 
+            this.draw(); 
+          }
+        }
+      }
+
+
+
+      function CtrlPanel(left, top, width, height){
+        var x0, x1, y0, y1, n, i, x, y;
+        var slide = {
+            left: 0, width: 0, right: 0, tpad: 40, xstep: width / (Chart.xlen-1), wfull: width
+        }
+        var tap_effect = {
+            x: 0, y: 0, radius: 0, opacity: 0,
+            draw: function(){
+              if(this.opacity>0.1){
+                ctx.globalCompositeOperation = 'multiply';
+                ctx.fillStyle = 'rgba('+(Theme.get('fill2'))+','+this.opacity+')';
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 82 * this.radius, 0, Math.PI*2, true);
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
+              }
+            },
+            setXY: function(x, y){ this.x = x; this.y = y; },
+            setProp: function(radius, opacity){ this.radius = radius; this.opacity = opacity; }
+        }
+        var charts_effect = {
+            opacity: [], ymax:[]
+        }
+        for(var i=0; i<=Chart.ynum; i++){
+            charts_effect.opacity[i] = 1;
+            charts_effect.ymax[i] = Chart.ymax;
+        }
+        
+        
+        this.draw = function(){
+          ctx.fillStyle = Theme.get('bg');
+          ctx.fillRect(0, top-30, p.width, height+60);
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(left, top, width, height);
+          ctx.clip();
+
+          x0 = left + slide.left; x1 = x0 + slide.width; y0 = top; y1 = y0 + height;//, y;
+          ctx.strokeStyle = Theme.get('stroke1');
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y0);
+          ctx.moveTo(x0, y1);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+          ctx.lineWidth = 12;
+          ctx.beginPath();
+          ctx.moveTo(x0+6, y0);
+          ctx.lineTo(x0+6, y1);
+          ctx.moveTo(x1-6, y0);
+          ctx.lineTo(x1-6, y1);
+          ctx.stroke();
+
+          ctx.lineWidth = 3;
+          for(n=1; n<=Chart.ynum; n++){//var n=1, i, x
+            if(charts_effect.opacity[n]>0.1){
+              ctx.globalAlpha = charts_effect.opacity[n];
+              ctx.strokeStyle = Chart.getColor(n);
+              ctx.beginPath();
+              x = left;
+              ctx.moveTo(x, Chart.getChartYp(n, 1, top, height, 10, charts_effect.ymax[n]));
+              for(i=2; i<=Chart.xlen; i++){
+                x += slide.xstep;
+                ctx.lineTo(x, Chart.getChartYp(n, i, top, height, 10, charts_effect.ymax[n]));
+              }
+              ctx.stroke();
+              ctx.globalAlpha = 1;
+            }
+          }
+          
+          ctx.fillStyle = Theme.get('fill1');
+          ctx.beginPath();
+          ctx.fillRect(left, top, slide.left, height);
+          ctx.fillRect(left + width - slide.right, top, slide.right, height);
+          ctx.restore(); 
+
+          tap_effect.draw();
+        }
+        this.updateChart = function(n){
+          for(var i=1; i<=Chart.ynum; i++){
+              if(i!=n) charts_effect.opacity[i] = Chart.ysel[i];
+              if(i!=n || Chart.ysel[n])
+                charts_effect.ymax[i] = Chart.ymax;
+          }
+          Animate.New(this, charts_effect, 1, 250, [charts_effect.opacity[n], charts_effect.ymax[0]], [Chart.ysel[n], Chart.ymax], 'linear', function(o, v){
+            o.opacity[n] = v[0];
+            for(var i=0; i<=Chart.ynum; i++)
+              if(i!=n) o.ymax[i] = v[1];
+          })
+        }
+        this.setSlideSize = function(w){
+          slide.width = slide.wmin = w;
+          slide.left = width - slide.width - slide.right;
+          slide.right - width - slide.width - slide.left;
+          this.setSlidePos(0);
+        }
+        var xch;
+        this.setSlidePos = function(x, mode){
+          if(mode===2){
+            x = (x < 0) ? 0 : (x > width - slide.width) ? width - slide.width : x;
+            slide.left = x;
+            slide.right = width - slide.width - slide.left;
+          }else
+          if(mode===-1){
+            x = (x < 0) ? 0 : (x > width - slide.right - slide.wmin) ? width - slide.right - slide.wmin : x;
+            slide.width = width - x - slide.right;
+            slide.left = x;
+          }else
+          if(mode===1){
+            var xw = slide.left + slide.wmin;
+            x = (x < xw) ? xw : (x > width) ? width : x;
+            slide.right = width - x;
+            slide.width = x - slide.left;
+          }
+          if(mode!==0){
+            requestAnimationFrame(this.draw);
+            if(xch !== x){
+              xch = x;
+              this.onslidechange(slide);
+            }
+          }
+        }
+
+        this.onslidechange = function(s){}
+        this.touchstart = function(t){
+          if(touchInRect(t, left, top, width, height)){
+            var yc = top + height/2, xl = left + slide.left, xr = left + slide.left + slide.width;
+            if(t.cX > xl - slide.tpad && t.cX < xl + slide.tpad){
+              slide.touchsel = -1;
+              tap_effect.setXY(xl, yc);
+            }else
+            if(t.cX > xl + slide.width - slide.tpad && t.cX < xr + slide.tpad){
+              slide.touchsel = 1;
+              tap_effect.setXY(xr, yc);
+            }else
+            if(t.cX > xl + slide.tpad && t.cX < xr - slide.tpad){
+              slide.touchsel = 2;
+              tap_effect.setXY(t.cX, yc);
+            }else{
+              slide.touchsel = 0;
+              return;
+            }
+
+            Animate.New(this, tap_effect, 1, 400, [0, 0], [1, 1], 'easeOutCubic', function(o, v){
+              o.setProp(v[0], v[1]);
+            })
+          }
+        }
+        this.touchmove = function(t){
+          if(!slide.mpos) slide.mpos = slide.left + ((slide.touchsel===1) ? slide.width : 0);
+          if(!tap_effect.mpos) tap_effect.mpos = tap_effect.x;
+          tap_effect.setXY(tap_effect.mpos + t.dX, tap_effect.y);
+          this.setSlidePos(slide.mpos + t.dX, slide.touchsel);
+        }
+        this.touchend = function(t){
+          slide.touchsel = slide.mpos = tap_effect.mpos = 0;
+          Animate.New(this, tap_effect, 1, 400, [tap_effect.radius, tap_effect.opacity], [0, 0], 'easeOutCubic', function(o, v){
+              o.setProp(v[0], v[1]);
+          })
+        }
+      }
+      
+      function CheckBox(x, y, name, color, id){
+          const fcss =  '38px Arial';
+          ctx.font = fcss;
+          var height = 95, radius = height / 2, text = ctx.measureText(name), txtleft = 110, xc0 = x + radius, yc0 = y + radius, xc1 = x + txtleft + text.width;
+
+          var check_effect = {
+            rIn: 0, rOut: 0, opacity: 0,
+            drawShadow: function(){
+              if(this.opacity>0.1){
+                ctx.fillStyle = 'rgba('+(Theme.get('fill4'))+','+this.opacity+')';
+                ctx.beginPath();
+                ctx.arc(xc0, yc0, 150 * this.rOut, 0, Math.PI*2, true);
+                ctx.fill();
+              }  
+            },
+            draw: function(){
+              if(this.rIn>0.1){
+                ctx.fillStyle = Theme.get('bg');
+                ctx.beginPath();
+                ctx.arc(xc0, yc0, 24 * this.rIn, 0, Math.PI*2, true);
+                ctx.fill();
+              }
+              if(this.opacity>0.1){
+                ctx.fillStyle = 'rgba('+(Theme.get('fill3'))+','+this.opacity+')';
+                ctx.beginPath();
+                ctx.arc(xc0, yc0, 87 * this.rOut, 0, Math.PI*2, true);
+                ctx.arc(xc0, yc0, 60 * this.rOut, 0, Math.PI*2, true);
+                ctx.fill("evenodd");
+              }
+            },
+            setProp: function(rIn, rOut, opacity){ this.rIn = rIn; this.rOut = rOut; this.opacity = opacity; }
+          }
+
+          this.draw = function(){
+            ctx.fillStyle = Theme.get('bg');
+            ctx.fillRect(x-35, y-35, this.width+70, height+70);
+            ctx.strokeStyle = Theme.get('stroke2');
+            ctx.lineWidth = 4;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(xc0, yc0, radius, Math.PI/180*90, Math.PI/180*270);
+            ctx.moveTo(xc0, y);
+            ctx.lineTo(xc1, y);
+            ctx.arc(xc1, yc0, radius, Math.PI/180*-90, Math.PI/180*90);
+            ctx.lineTo(xc0, y + height);
+            ctx.stroke();
+            ctx.clip();
+
+            check_effect.drawShadow();  
+
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(xc0, yc0, 28, 0, Math.PI*2, true);
+            ctx.fill();
+            ctx.font = fcss;
+            ctx.fillStyle = Theme.get('txt3');
+            ctx.textBaseline = 'middle';
+            ctx.fillText(name, x + txtleft, yc0);
+
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(xc0 - 11, yc0 + 3);
+            ctx.lineTo(xc0 - 4, yc0 + 10);
+            ctx.lineTo(xc0 + 12, yc0 - 7);
+            ctx.stroke();
+            ctx.restore(); 
+
+            check_effect.draw();
+          }
+          this.width = radius + txtleft + text.width;
+          this.check = 1;
+          this.id = id;
+          this.touchstart = function(t){
+            if(touchInRect(t, x, y, this.width, height)){
+              if(this.check){
+                Animate.New(this, check_effect, 1, 500, [0, 0, 1], [1, 1, 0], 'easeOutCubic', function(o, v){
+                    o.setProp(v[0], v[1], v[2]);
+                })
+              }else{
+                Animate.New(this, check_effect, 1, 500, [1, 0, 1], [0, 1, 0], 'easeOutCubic', function(o, v){
+                    o.setProp(v[0], v[1], v[2]);
+                })
+              }
+              this.check ^=1;
+              this.oncheck();
+            }
+          }
+          this.oncheck = function(){}
+      }
+
+      function SwitchBox(x, top, width, height = 100){
+        const name = ['Switch to Night Mode', 'Switch to Day Mode'];
+        var y = top;
+        this.mode = 0;
+        this.draw = function(){
+          ctx.fillStyle = Theme.get('bg');
+          ctx.fillRect(x, y, width, height);
+          ctx.font = '48px Arial';
+          ctx.fillStyle = Theme.get('txt4');
+          ctx.textBaseline = 'middle';
+          ctx.fillText(name[this.mode], x + 27, y + 48);
+        }
+        this.touchstart = function(t){
+          if(touchInRect(t, x, y, width, height)){
+             this.mode ^= 1;
+             this.onswitch();
+          }
+        }
+        this.resize = function(){
+          if(top==='bottom'){
+            y = (p.height * (window.innerHeight - (window.innerHeight / 10))) / ctx.canvas.clientHeight;
+            if((y + height) > p.height) y = p.height - height;
+          }
+        }
+        this.onswitch = function(){}
+        this.resize();
+      }
+
+      p.viewer = new Viewer(117, p.width, 925);
+      p.ctrlPanel = new CtrlPanel(35, 1078, 1008, 110);
+      p.checkBox = [];
+      for(var n = 1, left = 35, x = left, o; n<=Chart.ynum; n++){
+        o = new CheckBox(x, 1236, Chart.getName(n), Chart.getColor(n), n);
+        o.oncheck = function(){
+           Chart.selY(this.id, this.check);
+           p.ctrlPanel.updateChart(this.id);
+           p.viewer.updateChart(this.id);
+        }
+        p.checkBox.push(o); 
+        x += o.width + left;
+      } 
+      p.ctrlPanel.onslidechange = function(s){
+        p.viewer.bild(s);
+      }
+      p.ctrlPanel.setSlideSize(240);
+      p.switchBox = new SwitchBox(280, 'bottom', 500);
+      p.switchBox.onswitch = function(){
+        Theme.setTheme(this.mode);
+        p.draw();
+      }
+
+      p.draw = function(){
+        ctx.fillStyle = Theme.get('bg');
+        ctx.fillRect(0, 0, p.width, p.height);
+        ctx.font = 'Bold 50px Arial';
+        ctx.fillStyle = Theme.get('txt3');
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Followers', 47, 90);
+        p.viewer.draw();
+        p.ctrlPanel.draw();
+        for(i=0; i<p.checkBox.length; i++) p.checkBox[i].draw();
+        p.switchBox.draw();
+      }
+      p.resize = function(){
+        p.switchBox.resize();
+        p.draw();
+      }
+      p.draw();
+
+      
+      function touchInRect(t, x, y, w, h){
+        return (t.cX > x && t.cX < (x + w) && t.cY > y && t.cY < (y + h));
+      }
+      function getTouchXY(e){
+        var touch;
+        if(e.clientX>=0 && e.clientY>=0){
+          touch = e;
+        }else{
+          if(e.targetTouches && e.targetTouches.length>0){
+            touch = e.touches[0];
+          }else
+          if(e.touches && e.touches.length>0){
+            touch = e.touches[0];
+          }else
+          if(e.changedTouches && e.changedTouches.length>0){
+            touch = e.changedTouches[0];
+          }
+        }
+        touch.cX = touch.clientX * (touch.target.width / touch.target.clientWidth);
+        touch.cY = touch.clientY * (touch.target.height / touch.target.clientHeight); 
+        return touch;
+      }
+
+      var is_touch_supported = ('ontouchstart' in window) ? 1 : 0, sX, sY;
+      EVENTS = {
+        POINTER_DOWN : is_touch_supported ? 'touchstart' : 'mousedown',
+        POINTER_MOVE : is_touch_supported ? 'touchmove'  : 'mousemove',
+        POINTER_UP   : is_touch_supported ? 'touchend'   : 'mouseup'
+      }
+      ctx.canvas.addEventListener(EVENTS.POINTER_DOWN, function(e){ 
+        var t = getTouchXY(e); sX = t.cX; sY = t.cY; 
+        p.ctrlPanel.touchstart(t); 
+        p.checkBox.forEach(o=>o.touchstart(t));
+        p.switchBox.touchstart(t);
+      }, false );
+      ctx.canvas.addEventListener(EVENTS.POINTER_MOVE, function(e){ 
+        var t = getTouchXY(e); 
+        if(sX && sY){ 
+          t.dX = t.cX - sX; t.dY = t.cY - sY; 
+          p.ctrlPanel.touchmove(t); 
+        }
+        p.viewer.touchmove(t); 
+      }, false );
+      ctx.canvas.addEventListener(EVENTS.POINTER_UP, function(e){ 
+        p.ctrlPanel.touchend(getTouchXY(e)); sX = sY = 0; 
+      }, false );
+    }
+
+
+    var chart_num = prompt('Enter Chart number: ', 1);
+    chartsView = new ChartsView(chart_data, chart_num);   
+
+       
+    window.onresize = function resize(){ 
+        chartsView.resize();
+    }
+
+  </script>
+</body>
+</html>
